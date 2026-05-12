@@ -1,0 +1,63 @@
+.slider-container {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  width: 100%;
+  position: relative;
+}
+
+.slider-wrapper {
+  display: flex;
+  width: 100%;
+  touch-action: none;
+  user-select: none;
+  align-items: center;
+  justify-content: center;
+  /* Removed gap as icons are optional/removed for this design */
+}
+
+.slider-root {
+  position: relative;
+  display: flex;
+  width: 100%;
+  flex-grow: 1;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  align-items: center;
+  padding: 0.5rem 0; 
+}
+
+.slider-root:active {
+  cursor: grabbing;
+}
+
+.slider-track-wrapper {
+  display: flex;
+  flex-grow: 1;
+  width: 100%;
+}
+
+.slider-track {
+  position: relative;
+  height: 16px; /* Increased from dynamic small value to fixed larger value */
+  flex-grow: 1;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 9999px;
+  background-color: rgba(0, 0, 0, 0.08); 
+  transition: background-color 0.2s;
+}
+
+.slider-range {
+  position: absolute;
+  height: 100%;
+  background-color: #3370ff;
+  border-radius: 9999px;
+  will-change: width;
+}
+
+/* Optional hover state for track */
+.slider-root:hover .slider-track {
+  background-color: rgba(0, 0, 0, 0.12);
+}
