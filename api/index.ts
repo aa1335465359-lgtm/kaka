@@ -1,123 +1,126 @@
-import express from 'express';
-import cors from 'cors';
-import dotenv from 'dotenv';
-dotenv.config();
-
-const router = express.Router();
+// Simple Vercel serverless function handler
+// No Express dependency - uses raw Node.js http primitives
 
 const API_KEY = process.env.gpt || process.env.VITE_gpt || '';
 const MASKED_KEY = API_KEY ? `${API_KEY.substring(0, 4)}...${API_KEY.substring(API_KEY.length - 4)}` : 'MISSING';
 
-router.use(cors());
-router.use(express.json({ limit: '50mb' }));
-
-router.use((req, res, next) => {
-    const bodySize = req.body ? JSON.stringify(req.body).length : 0;
-    console.log(`[API] ${req.method} ${req.path} | body: ${bodySize} bytes | key: ${MASKED_KEY}`);
-    next();
-});
-
-router.get('/health', (req, res) => {
-    res.json({ 
-        status: 'ok', 
-        has_key: !!API_KEY,
-        key_preview: MASKED_KEY,
-        env_keys: Object.keys(process.env).filter(k => 
-            k.toLowerCase().includes('gpt') || k.toLowerCase().includes('key')
-        )
+function parseBody(req) {
+    return new Promise((resolve) => {
+        if (req.body) return resolve(req.body);
+        let data = '';
+        req.on('data', chunk => { data += chunk; });
+        req.on('end', () => {
+            try { resolve(data ? JSON.parse(data) : {}); }
+            catch(e) { resolve({ raw: data }); }
+        });
     });
-});
+}
 
-/**
- * Chat Completions endpoint - forwards to 9w7.cn/v1/chat/completions
- */
-router.post('/chat', async (req, res) => {
-    console.log('[API] Chat Request');
+function json(res, status, data) {
+    res.writeHead(status, {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+    });
+    res.end(JSON.stringify(data));
+}
+
+async function proxyToUpstream(upstreamUrl, body, timeout) {
+    const upstreamBody = JSON.stringify(body);
+    console.log(`[proxy] → ${upstreamUrl} | body: ${upstreamBody.length} bytes`);
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout || 180000);
+
     try {
-        if (!API_KEY) {
-            console.error('[API] Missing API_KEY (gpt) env var');
-            return res.status(500).json({ error: 'API Key (gpt) is not configured' });
-        }
-
-        const upstreamBody = JSON.stringify(req.body);
-        console.log(`[API] Chat body: ${upstreamBody.length} bytes, model: ${req.body?.model || 'default'}`);
-
-        const response = await fetch('https://9w7.cn/v1/chat/completions', {
+        const response = await fetch(upstreamUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${API_KEY}`
             },
             body: upstreamBody,
-            signal: AbortSignal.timeout(180000)
+            signal: controller.signal
         });
 
-        const responseText = await response.text();
-        let data: any;
-        try { data = JSON.parse(responseText); } catch (e) { data = { raw_response: responseText }; }
-
-        console.log(`[API] Chat Response: ${response.status}, len: ${responseText.length}`);
-
-        if (!response.ok) {
-            console.error('[API] Chat Error:', responseText.substring(0, 500));
-        }
-
-        res.status(response.status).json(data);
-    } catch (error: any) {
-        console.error('[API] Chat Fatal:', error.message);
-        res.status(500).json({ 
-            error: 'Internal Proxy Error', 
-            message: error.message,
-            type: error.name
-        });
+        clearTimeout(timer);
+        const text = await response.text();
+        console.log(`[proxy] ← status: ${response.status}, len: ${text.length}`);
+        return { status: response.status, body: text };
+    } catch(e) {
+        clearTimeout(timer);
+        console.error(`[proxy] error:`, e.message);
+        throw e;
     }
-});
+}
 
-/**
- * Images endpoint - forwards to 9w7.cn/v1/images/generations
- * gpt-image-2 only works via this endpoint, NOT via chat completions
- */
-router.post('/images', async (req, res) => {
-    console.log('[API] Image Request');
+export default async function handler(req, res) {
+    // CORS preflight
+    if (req.method === 'OPTIONS') {
+        res.writeHead(204, {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+            'Access-Control-Max-Age': '86400'
+        });
+        return res.end();
+    }
+
+    const url = new URL(req.url, 'http://localhost');
+    const path = url.pathname.replace(/^\/api/, '') || '/';
+
+    console.log(`[handler] ${req.method} ${path} | key: ${MASKED_KEY}`);
+
     try {
+        // Health check
+        if (req.method === 'GET' && path === '/health') {
+            return json(res, 200, {
+                status: 'ok',
+                has_key: !!API_KEY,
+                key_preview: MASKED_KEY,
+                node_version: process.version
+            });
+        }
+
         if (!API_KEY) {
-            console.error('[API] Missing API_KEY (gpt) env var');
-            return res.status(500).json({ error: 'API Key (gpt) is not configured' });
+            return json(res, 500, { error: 'API Key (gpt) not configured in environment' });
         }
 
-        const bodyStr = JSON.stringify(req.body);
-        const promptSize = req.body?.prompt?.length || 0;
-        console.log(`[API] Image body: ${bodyStr.length} bytes, prompt: ${promptSize} chars`);
-
-        const response = await fetch('https://9w7.cn/v1/images/generations', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${API_KEY}`
-            },
-            body: bodyStr,
-            signal: AbortSignal.timeout(180000)
-        });
-
-        const responseText = await response.text();
-        let data: any;
-        try { data = JSON.parse(responseText); } catch (e) { data = { raw_response: responseText }; }
-
-        console.log(`[API] Image Response: ${response.status}, len: ${responseText.length}`);
-
-        if (!response.ok) {
-            console.error('[API] Image Error:', responseText.substring(0, 500));
+        // Chat Completions
+        if (req.method === 'POST' && path === '/chat') {
+            const body = await parseBody(req);
+            const result = await proxyToUpstream(
+                'https://9w7.cn/v1/chat/completions',
+                body,
+                180000
+            );
+            return json(res, result.status, JSON.parse(result.body));
         }
 
-        res.status(response.status).json(data);
-    } catch (error: any) {
-        console.error('[API] Image Fatal:', error.message);
-        res.status(500).json({ 
-            error: 'Internal Proxy Error', 
-            message: error.message,
-            type: error.name
+        // Image Generations
+        if (req.method === 'POST' && path === '/images') {
+            const body = await parseBody(req);
+            const promptSize = body.prompt ? body.prompt.length : 0;
+            console.log(`[images] prompt: ${promptSize} chars`);
+
+            const result = await proxyToUpstream(
+                'https://9w7.cn/v1/images/generations',
+                body,
+                180000
+            );
+            return json(res, result.status, JSON.parse(result.body));
+        }
+
+        // 404
+        json(res, 404, { error: 'Not found', path });
+
+    } catch(e) {
+        console.error(`[handler] FATAL:`, e.message);
+        json(res, 500, {
+            error: 'Internal Error',
+            message: e.message,
+            type: e.name
         });
     }
-});
-
-export default router;
+}
