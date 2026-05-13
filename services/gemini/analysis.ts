@@ -6,6 +6,15 @@ import { PROTOCOL_OFFICER_PROMPT, CREATIVE_DIRECTOR_PROMPT } from "../prompts/te
 import { generateWithRetry, SAFETY_SETTINGS } from "./client";
 
 /**
+ * Unified result type combining face detection, garment analysis, and scene suggestions.
+ */
+export interface UnifiedAnalysisResult {
+  hasFace: boolean;
+  analysis: GarmentAnalysis;
+  sceneSuggestions: SceneSuggestion[];
+}
+
+/**
  * Step 0: Detect if the image contains a real human face.
  * Used to trigger Smart Mannequin Mode.
  */
@@ -419,4 +428,127 @@ export const generateDirectorConfig = async (
 export const generateVariationSuggestions = async (base64Image: string): Promise<VariationSuggestion[]> => {
     // Kept for compatibility, though currently unused in UI
     return [];
+};
+
+/**
+ * FIRST AID OPTIMIZATION: Unified Analysis (combines detectFace + analyzeGarment + sceneSuggestions)
+ * Single API call to reduce token waste and latency.
+ */
+export const analyzeGarmentUnified = async (
+    base64Image: string,
+    mimeType: string = "image/jpeg"
+): Promise<UnifiedAnalysisResult> => {
+    const sceneOptions = Object.values(SCENE_CONFIG).map(s => s.name);
+    const sceneListStr = JSON.stringify(sceneOptions);
+
+    const unifiedSchema: Schema = {
+        type: Type.OBJECT,
+        properties: {
+            hasFace: {
+                type: Type.BOOLEAN,
+                description: "Whether the image contains a visible real human face (a model).",
+            },
+            technicalDescription: {
+                type: Type.STRING,
+                description: "A highly detailed technical description of the garment's construction, stitching, neckline, hem, and closures. In English.",
+            },
+            fabricType: {
+                type: Type.STRING,
+                description: "Specific fabric material guess (e.g., Silk Chiffon, Heavy Cotton Twill, Leather). In English.",
+            },
+            cutAndFit: {
+                type: Type.STRING,
+                description: "The silhouette and fit of the garment (e.g., A-line, Bodycon, Oversized drop-shoulder). In English.",
+            },
+            originalStyleVibe: {
+                type: Type.STRING,
+                description: "The artistic mood of the original photo (e.g., Studio lighting, Boho chic, Streetwear). In English.",
+            },
+            styleKeywords: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+                description: "5 key adjectives describing the visual style. In English.",
+            },
+            recommendedScenario: {
+                type: Type.STRING,
+                description: `Select the single best fitting scenario from this exact list: ${sceneListStr}. Return only the name.`,
+            },
+            productTitle: {
+                type: Type.STRING,
+                description: "A professional e-commerce product title in English. Example: 'Vintage V-Neck Silk Dress High-Waist Slimming Midi Dress'.",
+            },
+            garmentLength: {
+                type: Type.STRING,
+                description: "The length of the garment. Choose strictly from: 'mini' (short/above knee), 'knee' (at knee), 'midi' (calf length), 'ankle' (ankle length), 'floor' (floor length), 'top' (if it is a top/jacket only).",
+            },
+            sceneSuggestions: {
+                type: Type.ARRAY,
+                items: {
+                    type: Type.OBJECT,
+                    properties: {
+                        id: { type: Type.STRING },
+                        title: { type: Type.STRING, description: "Short commercial name for the scene (English). 2-6 chars." },
+                        description: { type: Type.STRING, description: "PHYSICAL LOCATION PROMPT (English). Nouns only." }
+                    },
+                    required: ["id", "title", "description"]
+                }
+            }
+        },
+        required: ["hasFace", "technicalDescription", "fabricType", "cutAndFit", "originalStyleVibe", "styleKeywords", "recommendedScenario", "productTitle", "garmentLength", "sceneSuggestions"],
+    };
+
+    try {
+        const response = await generateWithRetry({
+            model: "gpt-5.5",
+            contents: {
+                parts: [
+                    { inlineData: { mimeType, data: base64Image } },
+                    {
+                        text: `Analyze this fashion image as a professional fashion designer.
+
+TASKS:
+1. Detect if the image contains a visible real human face. Set hasFace to true if a human model's face is clearly visible.
+2. Extract garment technical details: fabric, cut, fit, style vibe, style keywords, product title, garment length.
+3. From these possible scenarios, choose the best one for the garment: ${sceneListStr}.
+4. Suggest 4 physical locations where a person would wear this garment.
+
+RULES:
+- All text output in English.
+- For scene suggestions: use PHYSICAL NOUNS only (objects, materials, places). No camera/lighting terms. No storytelling.
+- garmentLength: use the specified single-word values only.
+- sceneSuggestions description field: PHYSICAL LOCATION PROMPT with concrete objects and materials, no emotions or vibe words.`
+                    }
+                ],
+            },
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: unifiedSchema,
+                systemInstruction: "You are a professional fashion technical designer. Analyze images and output structured JSON. Use English for all output.",
+                safetySettings: SAFETY_SETTINGS
+            },
+        });
+
+        if (response.text) {
+            const raw = JSON.parse(response.text);
+            const result: UnifiedAnalysisResult = {
+                hasFace: raw.hasFace || false,
+                analysis: {
+                    technicalDescription: raw.technicalDescription || "",
+                    fabricType: raw.fabricType || "",
+                    cutAndFit: raw.cutAndFit || "",
+                    originalStyleVibe: raw.originalStyleVibe || "",
+                    styleKeywords: raw.styleKeywords || [],
+                    recommendedScenario: raw.recommendedScenario || "",
+                    productTitle: raw.productTitle || "",
+                    garmentLength: raw.garmentLength || "midi",
+                },
+                sceneSuggestions: raw.sceneSuggestions || [],
+            };
+            return result;
+        }
+        throw new Error("No analysis data returned from unified call");
+    } catch (error) {
+        console.error("Unified Analysis Error:", error);
+        throw error;
+    }
 };

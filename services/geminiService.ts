@@ -10,5 +10,5 @@
 export { createDummyAnalysis } from './gemini/utils';
 export { preprocessGarment, evaluatePreprocessing } from './gemini/preprocessing';
 export { evaluateGeneratedImage } from './gemini/evaluation';
-export { analyzeGarmentImage, detectFaceInImage, generateSceneSuggestions, generateVariationSuggestions, generateSmartScenePrompt, generateDirectorConfig, generateStylePreset } from './gemini/analysis';
-export { generateStyledGarment, generateAnchorImage } from './gemini/generation';
+export { analyzeGarmentImage, detectFaceInImage, generateSceneSuggestions, generateVariationSuggestions, generateSmartScenePrompt, generateDirectorConfig, generateStylePreset, analyzeGarmentUnified } from './gemini/analysis';
+export { generateStyledGarment, generateAnchorImage, generateStyledGarmentDirect } from './gemini/generation';

@@ -1,4 +1,9 @@
 
+/**
+ * DEPRECATED: evaluateGeneratedImage has been removed from the default workflow.
+ * Kept as a debugging/testing utility only.
+ */
+
 import { Type, Schema } from "@google/genai";
 import { InspectionIssue, DetailedScores } from "../../types";
 import { generateWithRetry, SAFETY_SETTINGS } from "./client";

@@ -10,7 +10,7 @@ import {
   FRAMING_RULES,
   DESIGN_EXTENSION_RULES
 } from "../promptConfig";
-import { ANCHOR_PROMPT, DISPATCHER_PROMPT } from "../prompts/templates";
+import { ANCHOR_PROMPT, DISPATCHER_PROMPT, DIRECT_DISPATCHER_PROMPT } from "../prompts/templates";
 import { generateWithRetry, generateImage, generateImageFromParts, SAFETY_SETTINGS } from "./client";
 import { fetchImageBase64 } from "./utils";
 
@@ -460,6 +460,102 @@ Carefully modify the garment in Image 1 according to the request.
     
   } catch (error) {
     console.error("Generation Error:", error);
+    throw error;
+  }
+};
+
+/**
+ * FIRST AID OPTIMIZATION: Direct generation (bypasses AI Director JSON middleware).
+ * Extracts camera/lighting/framing directly from profile.stylePreset with code rules.
+ */
+export const generateStyledGarmentDirect = async (
+    base64Original: string,
+    analysis: GarmentAnalysis,
+    smartProfile: SmartProfile | null,
+    onLog?: (title: string, prompt: string) => void,
+    originalMimeType: string = "image/jpeg"
+): Promise<string> => {
+  try {
+    const parts: any[] = [];
+
+    // IMAGE 1: Original garment
+    parts.push({
+        inlineData: { mimeType: originalMimeType, data: base64Original },
+    });
+
+    // IMAGE 2: Anchor face identity (Smart Mode only)
+    if (smartProfile) {
+        parts.push({
+            inlineData: { mimeType: "image/jpeg", data: smartProfile.anchorImage },
+        });
+    }
+
+    // --- FRAMING RULE (code-based, no AI call) ---
+    const length = (analysis.garmentLength || "").toLowerCase();
+    let framing: string;
+    if (["mini", "knee"].includes(length)) {
+        framing = "FRAMING: American Shot (Knees up). Full leg visible.";
+    } else if (["midi", "ankle", "floor"].includes(length)) {
+        framing = "FRAMING: Full Body Shot. Head to toe visible.";
+    } else if (length === "top") {
+        framing = "FRAMING: Waist-Up Shot (Medium Shot). Focus on upper body. Crop at hips.";
+    } else {
+        // Fallback: check analysis text for clues
+        const text = (analysis.productTitle + " " + analysis.cutAndFit).toLowerCase();
+        if (/dress|gown|skirt|pants|jeans|coat|连体/.test(text)) {
+            framing = "FRAMING: Full Body Shot. Head to toe visible.";
+        } else {
+            framing = "FRAMING: Waist-Up Shot (Medium Shot). Focus on upper body.";
+        }
+    }
+
+    // --- EXTRACT STYLE PRESET DATA (code-based extraction, no AI) ---
+    const preset = smartProfile?.stylePreset;
+    const cameraInfo = {
+        lens: preset?.camera?.lens || "50mm (Standard)",
+        aperture: preset?.camera?.aperture || "f/5.6",
+        film_type: preset?.camera?.film_type || "Digital RAW",
+    };
+    const lightingInfo = {
+        setup: preset?.lighting?.setup || "Natural Softbox",
+        quality: preset?.lighting?.quality || "Soft Diffused",
+    };
+    const sceneInfo = {
+        environment: preset?.scene_context?.environment_type || smartProfile?.sceneDescription || "Studio",
+        atmosphere: preset?.mood?.atmosphere || "Natural",
+        color_palette: preset?.mood?.color_palette || "True to life",
+    };
+    const modelInfo = {
+        expression: (preset?.allowed_expressions && preset.allowed_expressions.length > 0)
+            ? preset.allowed_expressions[0]
+            : "Confident natural expression",
+        microAction: "Natural posing. Hands relaxed or interacting with garment lightly.",
+    };
+
+    // --- BUILD PROMPT VIA DIRECT DISPATCHER TEMPLATE ---
+    const directPrompt = DIRECT_DISPATCHER_PROMPT({
+        cameraInfo,
+        lightingInfo,
+        sceneInfo,
+        garmentInfo: {
+            type: analysis.productTitle,
+            material: analysis.fabricType,
+            silhouette: analysis.cutAndFit,
+        },
+        modelInfo,
+        framingRule: framing,
+    });
+
+    if (onLog) {
+        onLog("⚡ DIRECT DISPATCHER", directPrompt);
+    }
+
+    parts.push({ text: directPrompt });
+
+    return await generateImageFromParts(parts);
+
+  } catch (error) {
+    console.error("Direct Generation Error:", error);
     throw error;
   }
 };

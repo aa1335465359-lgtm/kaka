@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { SmartProfile, GeneratedVariation, DirectorConfig } from '../../types';
-import { generateStyledGarment, analyzeGarmentImage, generateDirectorConfig, detectFaceInImage, preprocessGarment } from '../../services/geminiService';
+import { generateStyledGarmentDirect, analyzeGarmentUnified } from '../../services/geminiService';
 import { storageService } from '../../services/storage';
 import { Button } from '../Button';
 import { UploadIcon } from '../Icons';
@@ -92,40 +92,25 @@ export const SmartWorkbenchStep: React.FC<SmartWorkbenchStepProps> = ({
 
     const processTask = async (task: WorkbenchTask) => {
         if (task.status === 'COMPLETED') return;
-        setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: 'DETECTING' } : t));
-        if (activeTaskId === task.id) setLoadingMessage("正在检测主体...");
+        setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: 'ANALYZING' } : t));
+        if (activeTaskId === task.id) setLoadingMessage("正在分析面料与场景...");
 
         // Clear logs for new run if single task
         if (!isBatchProcessing) setDevLogs([]);
 
         try {
             const originalBase64 = task.previewUrl.split(',')[1];
-            let workingBase64 = originalBase64;
-            const hasFace = await detectFaceInImage(originalBase64);
-            
-            if (hasFace) {
-                setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: 'PREPROCESSING' } : t));
-                if (activeTaskId === task.id) setLoadingMessage("智能人台处理中...");
-                const mannequinBase64 = await preprocessGarment(originalBase64, "image/jpeg");
-                workingBase64 = mannequinBase64;
-                setTasks(prev => prev.map(t => t.id === task.id ? { ...t, processedImage: `data:image/jpeg;base64,${mannequinBase64}` } : t));
-            }
 
-            setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: 'ANALYZING' } : t));
-            if (activeTaskId === task.id) setLoadingMessage("提取面料 DNA...");
-            const analysis = await analyzeGarmentImage(workingBase64);
+            // Unified analysis: face detection + garment analysis + scene suggestions in one call
+            const unified = await analyzeGarmentUnified(originalBase64, "image/jpeg");
+            const analysis = unified.analysis;
             
-            if (activeTaskId === task.id) setLoadingMessage("AI 总监规划拍摄脚本...");
-            // Pass logger to Director
-            const directorConfig = await generateDirectorConfig(analysis, profile, addDevLog);
-            setTasks(prev => prev.map(t => t.id === task.id ? { ...t, analysis, directorConfig, status: 'GENERATING' } : t));
+            setTasks(prev => prev.map(t => t.id === task.id ? { ...t, analysis, status: 'GENERATING' } : t));
 
-            if (activeTaskId === task.id) setLoadingMessage("8K 高保真渲染中...");
-            // Pass logger to Dispatcher
-            const resultBase64 = await generateStyledGarment(
-                workingBase64, analysis, profile.sceneStyle, "3:4", 0, 0, 'standard', 'full', 'pan', 'standing', 
-                undefined, "image/jpeg", false, null, undefined, 'auto', profile, directorConfig, 
-                addDevLog // <--- Logger injected here
+            if (activeTaskId === task.id) setLoadingMessage("高保真渲染中...");
+            // Direct generation: bypasses AI Director JSON middleware
+            const resultBase64 = await generateStyledGarmentDirect(
+                originalBase64, analysis, profile, addDevLog, "image/jpeg"
             );
 
             setTasks(prev => prev.map(t => t.id === task.id ? { ...t, resultImage: `data:image/jpeg;base64,${resultBase64}`, status: 'COMPLETED' } : t));

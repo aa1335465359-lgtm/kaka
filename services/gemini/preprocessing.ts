@@ -1,4 +1,9 @@
 
+/**
+ * DEPRECATED: evaluatePreprocessing has been removed from the default workflow.
+ * preprocessGarment is still available for manual use but no longer auto-triggered.
+ */
+
 import { Type, Schema } from "@google/genai";
 import { generateWithRetry, SAFETY_SETTINGS } from "./client";
 

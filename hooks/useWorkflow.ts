@@ -7,8 +7,8 @@ import {
     GarmentModification, CategoryOverride, AppMode, SmartProfile 
 } from '../types';
 import { 
-    analyzeGarmentImage, generateStyledGarment, generateSceneSuggestions, 
-    preprocessGarment, evaluatePreprocessing, createDummyAnalysis, 
+    analyzeGarmentUnified, analyzeGarmentImage, generateStyledGarment, 
+    preprocessGarment, createDummyAnalysis, 
     evaluateGeneratedImage 
 } from '../services/geminiService';
 import { SCENE_CONFIG } from '../services/promptConfig';
@@ -189,41 +189,25 @@ export const useWorkflow = () => {
         setAnalysis(null);
         setPreprocessWarning(null);
         
-        // Use extension mode check instead of workflowMode
-        setLoadingMessage(appMode === 'extension'
-            ? ["提取面料材质 DNA...", "解析服装结构与版型...", "构建 3D 剪裁模型..."] 
-            : ["识别服装面料细节...", "分析穿着场景与氛围...", "生成专业摄影建议..."]);
+        setLoadingMessage(["正在识别面料与场景..."]);
 
         try {
-            let imageToAnalyze = originalImage;
-            let mimeType = getMimeType(originalImage);
+            // Use unified analysis: one API call for face detection + garment analysis + scene suggestions
+            const mimeType = getMimeType(originalImage);
+            const raw = originalImage.split(',')[1];
+            const unified = await analyzeGarmentUnified(raw, mimeType);
 
-            if (isPreprocessEnabled) {
-                setLoadingMessage(prev => ["正在进行智能人台处理...", ...prev]);
-                setIsPreprocessing(true);
-                const raw = originalImage.split(',')[1];
-                const processed = await preprocessGarment(raw, mimeType);
-                const check = await evaluatePreprocessing(raw, processed);
-                if (check.score < 90 && check.warning) setPreprocessWarning(check.warning);
-                
-                imageToAnalyze = `data:image/jpeg;base64,${processed}`;
-                mimeType = "image/jpeg";
-                setOriginalImage(imageToAnalyze);
-                setIsPreprocessing(false);
+            setAnalysis(unified.analysis);
+            setSceneSuggestions(unified.sceneSuggestions || []);
+
+            if (unified.hasFace) {
+                setPreprocessWarning("检测到人脸。如需更好的效果，建议上传去掉人台的服装图片。");
             }
-
-            const result = await analyzeGarmentImage(imageToAnalyze.split(',')[1], mimeType);
-            setAnalysis(result);
 
             if (appMode === 'extension') {
                 setTimeout(() => setStep(WorkflowStep.DESIGN_WORKSPACE), 800);
             } else {
-                try {
-                    const suggestions = await generateSceneSuggestions(result);
-                    setSceneSuggestions(suggestions);
-                } catch (e) { console.warn(e); }
-                
-                const rec = scenePresets.find(p => p.name === result.recommendedScenario);
+                const rec = scenePresets.find(p => p.name === unified.analysis.recommendedScenario);
                 if (rec && modelType !== 'gugu') {
                     setStylePrompt(rec.prompt);
                     setSelectedSceneId(rec.id);
@@ -232,7 +216,6 @@ export const useWorkflow = () => {
             }
         } catch (e) {
             handleError(e, "分析失败，请重试");
-            setIsPreprocessing(false);
             setStep(WorkflowStep.UPLOAD);
         } finally {
             setIsAnalyzing(false);

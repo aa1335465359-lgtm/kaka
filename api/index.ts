@@ -95,7 +95,7 @@ export default async function handler(req, res) {
 
         // Image Generations
         if (req.method === 'POST' && path === '/images') {
-            const body = await readBody(req);
+            const body = (await readBody(req)) as { prompt?: string };
             const promptSize = body.prompt ? body.prompt.length : 0;
             const upstreamBody = JSON.stringify(body);
             console.log(`[images] prompt: ${promptSize} chars, body: ${upstreamBody.length} bytes`);

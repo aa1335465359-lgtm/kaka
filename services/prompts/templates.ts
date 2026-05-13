@@ -247,3 +247,80 @@ export const DISPATCHER_PROMPT = (data: DispatcherInput) => {
 ${c.strict_constraints.rules || "None"}
 `;
 };
+
+// ==========================================================================================
+// DIRECT DISPATCHER (Optimization: bypasses JSON middleware)
+// ==========================================================================================
+
+export interface DirectDispatcherInput {
+    cameraInfo: {
+        lens: string;
+        aperture: string;
+        film_type: string;
+    };
+    lightingInfo: {
+        setup: string;
+        quality: string;
+    };
+    sceneInfo: {
+        environment: string;
+        atmosphere: string;
+        color_palette: string;
+    };
+    garmentInfo: {
+        type: string;
+        material: string;
+        silhouette: string;
+    };
+    modelInfo: {
+        expression: string;
+        microAction: string;
+    };
+    framingRule: string;
+}
+
+/**
+ * [DIRECT DISPATCHER] - Compact prompt for direct generation.
+ * Bypasses AI Director JSON middleware. Uses code-extracted parameters.
+ * Pure English, no internal monologue, physical nouns only.
+ */
+export const DIRECT_DISPATCHER_PROMPT = (data: DirectDispatcherInput): string => {
+    const { cameraInfo, lightingInfo, sceneInfo, garmentInfo, modelInfo, framingRule } = data;
+
+    return `
+**FASHION PHOTOGRAPHY DISPATCH - DIRECT EXECUTION**
+
+**CAMERA**:
+- Sensor: ${cameraInfo.film_type}
+- Lens: ${cameraInfo.lens}
+- Aperture: ${cameraInfo.aperture}
+
+**LIGHTING**:
+- Setup: ${lightingInfo.setup}
+- Quality: ${lightingInfo.quality}
+
+**SCENE**:
+- Location: ${sceneInfo.environment}
+- Atmosphere: ${sceneInfo.atmosphere}
+- Color Palette: ${sceneInfo.color_palette}
+
+**SUBJECT**:
+- Expression: ${modelInfo.expression}
+- Action: ${modelInfo.microAction}
+- ${framingRule}
+
+**GARMENT**:
+- Item: ${garmentInfo.type}
+- Material: ${garmentInfo.material}
+- Silhouette: ${garmentInfo.silhouette}
+
+**FACE SOURCE**: Image 2 (Anchor identity). Match the face from Anchor image exactly.
+**FABRIC SOURCE**: Image 1 (Garment). Preserve original fabric texture, color, and details.
+
+**RULES**:
+- Sharp focus edge to edge. No bokeh. No blur.
+- Skin texture must look natural with visible pores. No plastic smoothing.
+- Do not add or remove garment elements.
+- The garment design, length, and silhouette must match Image 1 exactly.
+`;
+};

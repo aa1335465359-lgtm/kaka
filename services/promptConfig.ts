@@ -145,36 +145,6 @@ export const DEPTH_CONFIG = {
   }
 };
 
-// --- 3. AI FEEL CONFIG (0-100) - 5 TIER SYSTEM ---
-// Used for UI Labels primarily now, logic is handled by MATRIX
-export const AI_FEEL_CONFIG = [
-  {
-    max: 20,
-    label: "原片直出 (Raw/Amateur)",
-    prompt: "Legacy config - overridden by Matrix"
-  },
-  {
-    max: 40,
-    label: "胶片氛围 (Film/Vibe)",
-    prompt: "Legacy config - overridden by Matrix"
-  },
-  {
-    max: 60,
-    label: "电商标准 (Standard)",
-    prompt: "Legacy config - overridden by Matrix"
-  },
-  {
-    max: 80,
-    label: "精修大片 (High-End)",
-    prompt: "Legacy config - overridden by Matrix"
-  },
-  {
-    max: 100,
-    label: "超模/艺术 (Editorial)",
-    prompt: "Legacy config - overridden by Matrix"
-  }
-];
-
 // --- 4. FLOW CONFIG (0-100) ---
 export const FLOW_CONFIG = [
   {
