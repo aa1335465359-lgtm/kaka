@@ -10,7 +10,7 @@ import {
   FRAMING_RULES,
   DESIGN_EXTENSION_RULES
 } from "../promptConfig";
-import { ANCHOR_PROMPT, DISPATCHER_PROMPT, DIRECT_DISPATCHER_PROMPT } from "../prompts/templates";
+import { ANCHOR_PROMPT, DISPATCHER_PROMPT, UNIFIED_CREATIVE_BRIEF } from "../prompts/templates";
 import { generateWithRetry, generateImage, generateImageFromParts, SAFETY_SETTINGS } from "./client";
 import { fetchImageBase64 } from "./utils";
 
@@ -525,15 +525,27 @@ export const generateStyledGarmentDirect = async (
         atmosphere: preset?.mood?.atmosphere || "Natural",
         color_palette: preset?.mood?.color_palette || "True to life",
     };
-    const modelInfo = {
+    const modelInfo: any = {
         expression: (preset?.allowed_expressions && preset.allowed_expressions.length > 0)
             ? preset.allowed_expressions[0]
             : "Confident natural expression",
         microAction: "Natural posing. Hands relaxed or interacting with garment lightly.",
     };
 
-    // --- BUILD PROMPT VIA DIRECT DISPATCHER TEMPLATE ---
-    const directPrompt = DIRECT_DISPATCHER_PROMPT({
+    // --- EXTRACT FACE/BODY PARAMS (Smart Mode) ---
+    if (smartProfile) {
+        if (smartProfile.faceParams) {
+            modelInfo.ethnicity = smartProfile.faceParams.ethnicity;
+            modelInfo.faceFeatures = smartProfile.faceParams.features;
+            modelInfo.hairStyle = smartProfile.faceParams.hairStyle;
+        }
+        if (smartProfile.bodyParams) {
+            modelInfo.bodyType = smartProfile.bodyParams.bodyType;
+        }
+    }
+
+    // --- BUILD PROMPT VIA UNIFIED CREATIVE BRIEF ---
+    const creativeBrief = UNIFIED_CREATIVE_BRIEF({
         cameraInfo,
         lightingInfo,
         sceneInfo,
@@ -548,10 +560,10 @@ export const generateStyledGarmentDirect = async (
     });
 
     if (onLog) {
-        onLog("⚡ DIRECT DISPATCHER", directPrompt);
+        onLog("🎬 CREATIVE BRIEF", creativeBrief);
     }
 
-    parts.push({ text: directPrompt });
+    parts.push({ text: creativeBrief });
 
     return await generateImageFromParts(parts);
 

@@ -7,7 +7,7 @@ import {
     GarmentModification, CategoryOverride, AppMode, SmartProfile 
 } from '../types';
 import { 
-    analyzeGarmentUnified, analyzeGarmentImage, generateStyledGarment, 
+    analyzeGarmentUnified, analyzeGarmentImage, generateStyledGarment, generateStyledGarmentDirect,
     preprocessGarment, createDummyAnalysis, 
     evaluateGeneratedImage 
 } from '../services/geminiService';

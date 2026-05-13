@@ -249,10 +249,14 @@ ${c.strict_constraints.rules || "None"}
 };
 
 // ==========================================================================================
-// DIRECT DISPATCHER (Optimization: bypasses JSON middleware)
+// UNIFIED CREATIVE BRIEF (Replaces DIRECT_DISPATCHER_PROMPT)
+// One prompt for all modes: Smart Agent / Review / Design / Batch.
+// Natural language brief style — tells the model WHAT to achieve, not HOW per pixel.
+// Hard constraints: garment fidelity, face identity (if anchor).
+// Soft guidance: scene, lighting, camera, pose, expression.
 // ==========================================================================================
 
-export interface DirectDispatcherInput {
+export interface UnifiedBriefInput {
     cameraInfo: {
         lens: string;
         aperture: string;
@@ -275,63 +279,90 @@ export interface DirectDispatcherInput {
     modelInfo: {
         expression: string;
         microAction: string;
+        // NEW: Smart Mode face/body params from Setup Wizard
+        ethnicity?: string;
+        faceFeatures?: string;
+        hairStyle?: string;
+        bodyType?: string;
     };
     framingRule: string;
     hasAnchor: boolean;
+    // Standard Mode slider values (optional)
+    aiFeelValue?: number;
+    flowValue?: number;
 }
 
 /**
- * [DIRECT DISPATCHER] - Compact prompt for direct generation.
- * Bypasses AI Director JSON middleware. Uses code-extracted parameters.
- * Pure English, no internal monologue, physical nouns only.
+ * [UNIFIED CREATIVE BRIEF]
+ * Natural-language creative brief for image generation.
+ * All modes share this template. Parameters that are missing simply fall back to defaults.
  */
-export const DIRECT_DISPATCHER_PROMPT = (data: DirectDispatcherInput): string => {
-    const { cameraInfo, lightingInfo, sceneInfo, garmentInfo, modelInfo, framingRule } = data;
-    const hasAnchor = data.hasAnchor;
+export const UNIFIED_CREATIVE_BRIEF = (data: UnifiedBriefInput): string => {
+    const { cameraInfo, lightingInfo, sceneInfo, garmentInfo, modelInfo, framingRule, hasAnchor, aiFeelValue, flowValue } = data;
 
-    // Build reference image instruction based on how many images are passed
-    const refInstruction = hasAnchor
-        ? `[REFERENCE IMAGES ABOVE]
-REF 1 = GARMENT: The original garment photo. You MUST preserve its fabric texture, weave, color, sheen, pattern, stitching details, neckline, hem, and overall silhouette EXACTLY.
-REF 2 = MODEL FACE: The anchor identity portrait. You MUST match this person's facial features, bone structure, skin tone, and hair exactly. Pose the face to match the head angle specified below.
-`
-        : `[REFERENCE IMAGE ABOVE]
-REF 1 = GARMENT: The original garment photo. You MUST preserve its fabric texture, weave, color, sheen, pattern, stitching details, neckline, hem, and overall silhouette EXACTLY. Put this exact garment on a fashion model matching the subject description below.
-`;
+    // --- HARD: GARMENT REF ---
+    const garmentRef = `GARMENT REFERENCE — The garment in the first reference image is your hero piece: a ${garmentInfo.type}, ${garmentInfo.material}, ${garmentInfo.silhouette} silhouette. Preserve its fabric texture, weave density, color accuracy, pattern, and construction details exactly. Do not modify the garment's design or material — this is ground truth.`;
 
-    return `
-**FASHION PHOTOGRAPHY DISPATCH**
+    // --- HARD: FACE REF (Smart Mode only) ---
+    const faceRef = hasAnchor
+        ? `MODEL REFERENCE — The face in the second reference image is your model. Match her facial structure, features, skin tone, and hair exactly.`
+        : '';
 
-${refInstruction}
----
-**CAMERA**:
-- Sensor: ${cameraInfo.film_type}
-- Lens: ${cameraInfo.lens}
-- Aperture: ${cameraInfo.aperture}
+    // --- MODEL DESCRIPTION ---
+    const modelDesc = buildModelDescription(modelInfo, hasAnchor);
 
-**LIGHTING**:
-- Setup: ${lightingInfo.setup}
-- Quality: ${lightingInfo.quality}
+    // --- SCENE ---
+    const sceneQuality = aiFeelValue !== undefined && aiFeelValue > 70 ? ' Editorial polish — rich contrast, intentional shadows.'
+        : aiFeelValue !== undefined && aiFeelValue <= 30 ? ' Candid, unpolished feel — natural light, real texture.'
+        : '';
 
-**SCENE**:
-- Location: ${sceneInfo.environment}
-- Atmosphere: ${sceneInfo.atmosphere}
-- Color Palette: ${sceneInfo.color_palette}
+    const flowNote = flowValue !== undefined && flowValue >= 50
+        ? ' Light movement — fabric and hair may catch a breeze.'
+        : '';
 
-**SUBJECT**:
-- Expression: ${modelInfo.expression}
-- Action: ${modelInfo.microAction}
-- ${framingRule}
+    const sceneBlock = `SETTING — ${sceneInfo.environment}. ${sceneInfo.atmosphere} atmosphere, ${sceneInfo.color_palette} palette.${sceneQuality}${flowNote} The product stays central — background frames the garment, never fights it.`;
 
-**GARMENT SPEC**:
-- Item: ${garmentInfo.type}
-- Material: ${garmentInfo.material}
-- Silhouette: ${garmentInfo.silhouette}
+    // --- CAMERA + LIGHT ---
+    const techBlock = `PHOTOGRAPHY — ${cameraInfo.lens}, ${cameraInfo.aperture}, ${cameraInfo.film_type}. ${lightingInfo.setup}, ${lightingInfo.quality}. ${framingRule}. The garment faces the light — every fabric detail must read clearly.`;
 
-**CRITICAL CONSTRAINTS**:
-- Reference image garment details are GROUND TRUTH. Do not hallucinate different fabric, color, or design.
-- Sharp focus edge to edge. No bokeh. No background blur.
-- Natural skin texture with visible pores. No plastic or airbrushed skin.
-- Professional e-commerce lighting. Model face clearly lit.
-`;
+    // --- DIRECTION ---
+    const directionBlock = `DIRECTION — ${modelInfo.expression} energy. ${modelInfo.microAction} She presents the garment naturally — at ease, not stiff. No catalog-mannequin posing.`;
+
+    // --- QUALITY ---
+    const qualityBlock = `QUALITY — Premium e-commerce main image standard. Skin reads as real skin with visible texture. Lighting is clean and even. The garment looks like what the customer will receive — truthful fabric, desirable silhouette, well-made construction.`;
+
+    return `${garmentRef}
+
+${faceRef}
+${modelDesc}
+
+${sceneBlock}
+
+${techBlock}
+
+${directionBlock}
+
+${qualityBlock}`;
 };
+
+/**
+ * Build a natural model description from available params.
+ * Smart Mode: uses ethnicity/face/body from Setup Wizard.
+ * Standard Mode: uses only expression/microAction (modelType is handled by reference image selection).
+ */
+function buildModelDescription(
+    modelInfo: UnifiedBriefInput['modelInfo'],
+    hasAnchor: boolean
+): string {
+    if (hasAnchor) {
+        // Smart Mode: model identity comes from anchor image.
+        // Add body context if available.
+        const bodyContext = modelInfo.bodyType
+            ? `Her physique is ${modelInfo.bodyType}${modelInfo.faceFeatures ? `. Natural poise, ${modelInfo.faceFeatures} features` : '.'}`
+            : `. Natural poise, relaxed carriage.`;
+        return `SUBJECT — The model carries herself with ease.${bodyContext}${modelInfo.hairStyle ? ` ${modelInfo.hairStyle}.` : ''}${modelInfo.ethnicity ? ` ${modelInfo.ethnicity} heritage.` : ''}`;
+    } else {
+        // Standard Mode: generic model with directional hints.
+        return `SUBJECT — A fashion model with natural presence. She wears the garment effortlessly — believable, not performative.`;
+    }
+}
