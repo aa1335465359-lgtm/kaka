@@ -68,7 +68,7 @@ export default async function handler(req, res) {
             console.log(`[chat] body: ${upstreamBody.length} bytes`);
 
             const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), 180000);
+            const timer = setTimeout(() => controller.abort(), 360000);
 
             try {
                 const upstream = await fetch('https://9w7.cn/v1/chat/completions', {
@@ -101,7 +101,7 @@ export default async function handler(req, res) {
             console.log(`[images] prompt: ${promptSize} chars, body: ${upstreamBody.length} bytes`);
 
             const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), 180000);
+            const timer = setTimeout(() => controller.abort(), 360000);
 
             try {
                 const upstream = await fetch('https://9w7.cn/v1/images/generations', {
