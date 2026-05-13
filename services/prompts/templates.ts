@@ -277,6 +277,7 @@ export interface DirectDispatcherInput {
         microAction: string;
     };
     framingRule: string;
+    hasAnchor: boolean;
 }
 
 /**
@@ -286,10 +287,23 @@ export interface DirectDispatcherInput {
  */
 export const DIRECT_DISPATCHER_PROMPT = (data: DirectDispatcherInput): string => {
     const { cameraInfo, lightingInfo, sceneInfo, garmentInfo, modelInfo, framingRule } = data;
+    const hasAnchor = data.hasAnchor;
+
+    // Build reference image instruction based on how many images are passed
+    const refInstruction = hasAnchor
+        ? `[REFERENCE IMAGES ABOVE]
+REF 1 = GARMENT: The original garment photo. You MUST preserve its fabric texture, weave, color, sheen, pattern, stitching details, neckline, hem, and overall silhouette EXACTLY.
+REF 2 = MODEL FACE: The anchor identity portrait. You MUST match this person's facial features, bone structure, skin tone, and hair exactly. Pose the face to match the head angle specified below.
+`
+        : `[REFERENCE IMAGE ABOVE]
+REF 1 = GARMENT: The original garment photo. You MUST preserve its fabric texture, weave, color, sheen, pattern, stitching details, neckline, hem, and overall silhouette EXACTLY. Put this exact garment on a fashion model matching the subject description below.
+`;
 
     return `
-**FASHION PHOTOGRAPHY DISPATCH - DIRECT EXECUTION**
+**FASHION PHOTOGRAPHY DISPATCH**
 
+${refInstruction}
+---
 **CAMERA**:
 - Sensor: ${cameraInfo.film_type}
 - Lens: ${cameraInfo.lens}
@@ -309,18 +323,15 @@ export const DIRECT_DISPATCHER_PROMPT = (data: DirectDispatcherInput): string =>
 - Action: ${modelInfo.microAction}
 - ${framingRule}
 
-**GARMENT**:
+**GARMENT SPEC**:
 - Item: ${garmentInfo.type}
 - Material: ${garmentInfo.material}
 - Silhouette: ${garmentInfo.silhouette}
 
-**FACE SOURCE**: Image 2 (Anchor identity). Match the face from Anchor image exactly.
-**FABRIC SOURCE**: Image 1 (Garment). Preserve original fabric texture, color, and details.
-
-**RULES**:
-- Sharp focus edge to edge. No bokeh. No blur.
-- Skin texture must look natural with visible pores. No plastic smoothing.
-- Do not add or remove garment elements.
-- The garment design, length, and silhouette must match Image 1 exactly.
+**CRITICAL CONSTRAINTS**:
+- Reference image garment details are GROUND TRUTH. Do not hallucinate different fabric, color, or design.
+- Sharp focus edge to edge. No bokeh. No background blur.
+- Natural skin texture with visible pores. No plastic or airbrushed skin.
+- Professional e-commerce lighting. Model face clearly lit.
 `;
 };

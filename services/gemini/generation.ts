@@ -544,6 +544,7 @@ export const generateStyledGarmentDirect = async (
         },
         modelInfo,
         framingRule: framing,
+        hasAnchor: !!smartProfile,
     });
 
     if (onLog) {
